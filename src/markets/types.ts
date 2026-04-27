@@ -12,6 +12,7 @@ export interface Market {
   volume: number;
   liquidity: number;
   endDate: string;
+  resolvesInDays: number;
   tags: string[];
   topPositions: WalletPosition[];
 }
@@ -33,8 +34,13 @@ export interface RawGammaMarket {
   archived?: boolean;
   acceptingOrders?: boolean;
   tags?: Array<{ label?: string; slug?: string } | string>;
+  category?: string;
+  categories?: Array<{ label?: string; slug?: string } | string>;
   events?: Array<{
     tags?: Array<{ label?: string; slug?: string } | string>;
+    category?: string;
+    title?: string;
+    slug?: string;
   }>;
 }
 
