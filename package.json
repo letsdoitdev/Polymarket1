@@ -1,0 +1,25 @@
+{
+  "name": "polymarket-debate-bot",
+  "version": "0.1.0",
+  "description": "Multi-agent debate bot that analyzes Polymarket prediction markets and recommends bets.",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  }
+}
