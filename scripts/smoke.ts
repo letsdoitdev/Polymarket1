@@ -6,7 +6,7 @@ const future = (days: number) =>
 
 const fixtures: RawGammaMarket[] = [
   {
-    id: "pass-gamma-tag",
+    id: "pass-fed",
     question: "Will the Fed cut rates by July?",
     description: "FOMC decision.",
     outcomes: '["Yes","No"]',
@@ -16,17 +16,15 @@ const fixtures: RawGammaMarket[] = [
     endDate: future(5),
     active: true,
     closed: false,
-    events: [{ tags: [{ slug: "economics", label: "Economics" }] }],
   },
   {
-    id: "pass-keyword-fallback",
+    id: "pass-russia",
     question: "Will Russia and Ukraine sign a ceasefire deal this week?",
     outcomes: '["Yes","No"]',
     outcomePrices: '["0.30","0.70"]',
     liquidityNum: 25_000,
     endDate: future(4),
     active: true,
-    // No tags from Gamma at all -- keyword fallback should rescue via "russia"/"ukraine".
   },
   {
     id: "fail-band",
@@ -36,7 +34,6 @@ const fixtures: RawGammaMarket[] = [
     liquidityNum: 50_000,
     endDate: future(3),
     active: true,
-    events: [{ tags: [{ slug: "politics" }] }],
   },
   {
     id: "fail-liquidity",
@@ -46,7 +43,6 @@ const fixtures: RawGammaMarket[] = [
     liquidityNum: 5_000,
     endDate: future(3),
     active: true,
-    events: [{ tags: [{ slug: "politics" }] }],
   },
   {
     id: "fail-horizon",
@@ -56,17 +52,15 @@ const fixtures: RawGammaMarket[] = [
     liquidityNum: 50_000,
     endDate: future(60),
     active: true,
-    events: [{ tags: [{ slug: "politics" }] }],
   },
   {
-    id: "fail-tag",
+    id: "fail-no-keyword",
     question: "Sports outcome between two teams",
     outcomes: '["Yes","No"]',
     outcomePrices: '["0.80","0.20"]',
     liquidityNum: 50_000,
     endDate: future(3),
     active: true,
-    events: [{ tags: [{ slug: "sports" }] }],
   },
   {
     id: "fail-binary",
@@ -76,7 +70,6 @@ const fixtures: RawGammaMarket[] = [
     liquidityNum: 50_000,
     endDate: future(3),
     active: true,
-    events: [{ tags: [{ slug: "politics" }] }],
   },
   {
     id: "fail-crypto-bitcoin",
@@ -86,7 +79,6 @@ const fixtures: RawGammaMarket[] = [
     liquidityNum: 1_000_000,
     endDate: future(3),
     active: true,
-    events: [{ tags: [{ slug: "crypto" }] }],
   },
   {
     id: "fail-crypto-eth",
@@ -96,7 +88,6 @@ const fixtures: RawGammaMarket[] = [
     liquidityNum: 1_000_000,
     endDate: future(3),
     active: true,
-    events: [{ tags: [{ slug: "regulation" }] }],
   },
 ];
 
@@ -109,12 +100,12 @@ passing.forEach((m) =>
 console.log(`\nRejected (${rejected.length}):`);
 rejected.forEach((r) => console.log(`  - ${r.id}: ${r.reasons.join("; ")}`));
 
-const expectedPass = ["pass-gamma-tag", "pass-keyword-fallback"];
+const expectedPass = ["pass-fed", "pass-russia"];
 const expectedFail = [
   "fail-band",
   "fail-liquidity",
   "fail-horizon",
-  "fail-tag",
+  "fail-no-keyword",
   "fail-binary",
   "fail-crypto-bitcoin",
   "fail-crypto-eth",
@@ -133,21 +124,19 @@ if (JSON.stringify(failIds) !== JSON.stringify(expectedFail.sort())) {
   ok = false;
 }
 
-// Crypto block must be the *only* reason -- it short-circuits before other checks.
 const btc = rejected.find((r) => r.id === "fail-crypto-bitcoin");
 if (!btc || btc.reasons.length !== 1 || !btc.reasons[0].includes("crypto keyword")) {
   console.error("\n[FAIL] crypto blocklist did not short-circuit:", btc?.reasons);
   ok = false;
 }
 
-// Keyword-fallback market must surface the kw: tag.
-const kwPass = passing.find((m) => m.id === "pass-keyword-fallback");
-if (!kwPass || !kwPass.tags.some((t) => t.startsWith("kw:"))) {
-  console.error("\n[FAIL] keyword fallback did not annotate tags:", kwPass?.tags);
+// Tags must be raw matched keywords (no kw: prefix anymore).
+const russia = passing.find((m) => m.id === "pass-russia");
+if (!russia || !russia.tags.includes("russia") || russia.tags.some((t) => t.startsWith("kw:"))) {
+  console.error("\n[FAIL] tags should be plain keyword(s) without kw: prefix:", russia?.tags);
   ok = false;
 }
 
-// resolvesInDays must be present and sensible.
 if (!passing.every((m) => m.resolvesInDays >= 0 && m.resolvesInDays <= 7)) {
   console.error("\n[FAIL] resolvesInDays out of expected range");
   ok = false;

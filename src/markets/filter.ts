@@ -1,26 +1,5 @@
 import { Market, RawGammaMarket, ScoreResult } from "./types";
 
-const ALLOWED_TAGS = new Set([
-  "politics",
-  "economics",
-  "economy",
-  "technology",
-  "tech",
-  "science",
-  "business",
-  "crypto",
-  "climate",
-  "regulation",
-  "geopolitics",
-  "world",
-  "us-politics",
-  "elections",
-  "election",
-  "policy",
-  "finance",
-  "ai",
-]);
-
 // Hard blocklist applied to the question text before any other check.
 const CRYPTO_QUESTION_BLOCKLIST = [
   "bitcoin",
@@ -40,9 +19,10 @@ const CRYPTO_QUESTION_BLOCKLIST = [
   "coinbase",
 ];
 
-// Secondary safety net: if no Gamma tags map to ALLOWED_TAGS, scan the
-// question text for any of these keywords and treat it as on-topic.
-const QUESTION_KEYWORD_FALLBACK = [
+// Gamma does not return usable tag fields, so the question text is the
+// only signal we have for topical relevance. A market must contain at
+// least one of these to qualify.
+const QUESTION_TOPIC_KEYWORDS = [
   "russia",
   "ukraine",
   "china",
@@ -108,28 +88,6 @@ function toNumber(value: unknown): number {
   return 0;
 }
 
-function pushTag(out: Set<string>, t: { label?: string; slug?: string } | string | undefined): void {
-  if (!t) return;
-  if (typeof t === "string") {
-    out.add(t.toLowerCase());
-    return;
-  }
-  if (t.slug) out.add(t.slug.toLowerCase());
-  if (t.label) out.add(t.label.toLowerCase());
-}
-
-function extractTags(raw: RawGammaMarket): string[] {
-  const out = new Set<string>();
-  raw.tags?.forEach((t) => pushTag(out, t));
-  raw.categories?.forEach((c) => pushTag(out, c));
-  if (raw.category) out.add(String(raw.category).toLowerCase());
-  raw.events?.forEach((e) => {
-    e.tags?.forEach((t) => pushTag(out, t));
-    if (e.category) out.add(String(e.category).toLowerCase());
-  });
-  return Array.from(out);
-}
-
 function isBinaryYesNo(raw: RawGammaMarket): boolean {
   const outcomes = parseJsonField<string[]>(raw.outcomes);
   if (!Array.isArray(outcomes) || outcomes.length !== 2) return false;
@@ -154,12 +112,20 @@ function getYesProbability(raw: RawGammaMarket): number | null {
 function questionContainsAny(question: string, words: string[]): string | null {
   const q = question.toLowerCase();
   for (const w of words) {
-    // Word-ish boundary: avoid matching "btc" inside "abtchain" by requiring
-    // a non-letter on both sides. Cheap regex; fine at 100 markets.
     const re = new RegExp(`(^|[^a-z])${w}([^a-z]|$)`, "i");
     if (re.test(q)) return w;
   }
   return null;
+}
+
+function matchedTopicKeywords(question: string): string[] {
+  const q = question.toLowerCase();
+  const hits: string[] = [];
+  for (const w of QUESTION_TOPIC_KEYWORDS) {
+    const re = new RegExp(`(^|[^a-z])${w}([^a-z]|$)`, "i");
+    if (re.test(q)) hits.push(w);
+  }
+  return hits;
 }
 
 export interface ScoreContext {
@@ -175,7 +141,6 @@ export function scoreMarket(
   const now = ctx.now ?? new Date();
   const question = raw.question ?? "";
 
-  // Always-on hard exclusions first.
   if (raw.closed === true || raw.archived === true || raw.active === false) {
     reasons.push("market is not active");
     return { result: { passed: false, reasons }, market: null };
@@ -222,27 +187,9 @@ export function scoreMarket(
     }
   }
 
-  const gammaTags = extractTags(raw);
-  let tags = gammaTags;
-  let tagSource: "gamma" | "keyword-fallback" | "none" =
-    gammaTags.length > 0 ? "gamma" : "none";
-  let hasAllowedTag = gammaTags.some((t) => ALLOWED_TAGS.has(t));
-
-  if (!hasAllowedTag) {
-    const kw = questionContainsAny(question, QUESTION_KEYWORD_FALLBACK);
-    if (kw) {
-      tags = Array.from(new Set([...gammaTags, `kw:${kw}`]));
-      tagSource = "keyword-fallback";
-      hasAllowedTag = true;
-    }
-  }
-
-  if (!hasAllowedTag) {
-    reasons.push(
-      `no allowed tag and no keyword fallback hit (gamma tags: ${
-        gammaTags.length ? gammaTags.join(", ") : "none"
-      })`
-    );
+  const tags = matchedTopicKeywords(question);
+  if (tags.length === 0) {
+    reasons.push("no on-topic keyword found in question text");
   }
 
   if (reasons.length > 0) {
@@ -261,9 +208,6 @@ export function scoreMarket(
     tags,
     topPositions: [],
   };
-
-  // tagSource is informational; surfaced through tags array via the kw: prefix.
-  void tagSource;
 
   return { result: { passed: true, reasons: [] }, market };
 }

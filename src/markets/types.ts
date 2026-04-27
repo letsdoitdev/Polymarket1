@@ -33,15 +33,6 @@ export interface RawGammaMarket {
   closed?: boolean;
   archived?: boolean;
   acceptingOrders?: boolean;
-  tags?: Array<{ label?: string; slug?: string } | string>;
-  category?: string;
-  categories?: Array<{ label?: string; slug?: string } | string>;
-  events?: Array<{
-    tags?: Array<{ label?: string; slug?: string } | string>;
-    category?: string;
-    title?: string;
-    slug?: string;
-  }>;
 }
 
 export interface ScoreResult {
