@@ -1,3 +1,5 @@
+import { SidePayoffs } from "../betting/payoff";
+
 export interface WalletPosition {
   address: string;
   size: number;
@@ -12,6 +14,7 @@ export interface Market {
   bestBid?: number;
   bestAsk?: number;
   lastTradePrice?: number;
+  sidePayoffs: SidePayoffs;
   volume: number;
   liquidity: number;
   endDate: string;

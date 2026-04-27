@@ -1,3 +1,4 @@
+import { computeSidePayoffs } from "../betting/payoff";
 import { Market, RawGammaMarket, ScoreResult } from "./types";
 
 // Hard blocklist applied to the question text before any other check.
@@ -123,8 +124,6 @@ const QUESTION_TOPIC_KEYWORDS = Array.from(
   ])
 );
 
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-
 function parseJsonField<T>(value: unknown): T | null {
   if (value === undefined || value === null) return null;
   if (typeof value !== "string") return value as T;
@@ -236,20 +235,39 @@ export function scoreMarket(
 
   const endDateStr = raw.endDate ?? raw.endDateIso;
   const endDate = endDateStr ? new Date(endDateStr) : null;
-  let resolvesInDays = -1;
+  let resolvesInDays = Number.NaN;
   if (!endDate || Number.isNaN(endDate.getTime())) {
     reasons.push("missing or invalid endDate");
   } else {
     const delta = endDate.getTime() - now.getTime();
-    resolvesInDays = Math.round(delta / (24 * 60 * 60 * 1000));
-    if (delta > SEVEN_DAYS_MS) {
-      reasons.push(`resolves in ${resolvesInDays} days, > 7`);
+    // floor() so a market that already expired (delta < 0) lands on a
+    // negative integer rather than rounding back up to 0.
+    resolvesInDays = Math.floor(delta / (24 * 60 * 60 * 1000));
+    // Hard client-side clamp -- Gamma's end_date_max param has been
+    // observed to leak through far-future markets, so we re-check here.
+    if (resolvesInDays < 0 || resolvesInDays > 7) {
+      reasons.push(`resolvesInDays ${resolvesInDays} outside [0, 7]`);
     }
   }
 
   const tags = matchedTopicKeywords(question);
   if (tags.length === 0) {
     reasons.push("no on-topic keyword found in question text");
+  }
+
+  const bestBid = toOptionalNumber(raw.bestBid);
+  const bestAsk = toOptionalNumber(raw.bestAsk);
+  const sidePayoffs = computeSidePayoffs(bestBid, bestAsk);
+  if (!sidePayoffs.anyPasses) {
+    const yp =
+      sidePayoffs.yesPayoffPct !== null
+        ? `${sidePayoffs.yesPayoffPct.toFixed(0)}%`
+        : "n/a";
+    const np =
+      sidePayoffs.noPayoffPct !== null
+        ? `${sidePayoffs.noPayoffPct.toFixed(0)}%`
+        : "n/a";
+    reasons.push(`payoff fails on both sides (YES ${yp} / NO ${np})`);
   }
 
   if (reasons.length > 0) {
@@ -261,9 +279,10 @@ export function scoreMarket(
     question,
     description: raw.description ?? "",
     currentYesProbability: yesProb!,
-    bestBid: toOptionalNumber(raw.bestBid),
-    bestAsk: toOptionalNumber(raw.bestAsk),
+    bestBid,
+    bestAsk,
     lastTradePrice: toOptionalNumber(raw.lastTradePrice),
+    sidePayoffs,
     volume: toNumber(raw.volumeNum ?? raw.volume),
     liquidity,
     endDate: endDate!.toISOString(),
