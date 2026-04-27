@@ -9,6 +9,9 @@ export interface Market {
   question: string;
   description: string;
   currentYesProbability: number;
+  bestBid?: number;
+  bestAsk?: number;
+  lastTradePrice?: number;
   volume: number;
   liquidity: number;
   endDate: string;
@@ -27,6 +30,9 @@ export interface RawGammaMarket {
   volumeNum?: number;
   liquidity?: string | number;
   liquidityNum?: number;
+  bestBid?: string | number;
+  bestAsk?: string | number;
+  lastTradePrice?: string | number;
   endDate?: string;
   endDateIso?: string;
   active?: boolean;

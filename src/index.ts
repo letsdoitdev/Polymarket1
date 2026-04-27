@@ -11,9 +11,17 @@ function formatUsd(n: number): string {
 
 function printMarket(m: Market, idx: number): void {
   const yesPct = (m.currentYesProbability * 100).toFixed(1);
+  const quote = [
+    m.bestBid !== undefined ? `bid ${m.bestBid.toFixed(3)}` : null,
+    m.bestAsk !== undefined ? `ask ${m.bestAsk.toFixed(3)}` : null,
+    m.lastTradePrice !== undefined ? `last ${m.lastTradePrice.toFixed(3)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" | ");
   console.log(`\n[${idx + 1}] ${m.question}`);
   console.log(`    id:         ${m.id}`);
   console.log(`    YES odds:   ${yesPct}%`);
+  if (quote) console.log(`    quote:      ${quote}`);
   console.log(`    liquidity:  ${formatUsd(m.liquidity)}`);
   console.log(`    volume:     ${formatUsd(m.volume)}`);
   console.log(`    resolves:   ${m.endDate.slice(0, 10)} (${m.resolvesInDays}d)`);

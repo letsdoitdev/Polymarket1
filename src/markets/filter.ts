@@ -21,51 +21,107 @@ const CRYPTO_QUESTION_BLOCKLIST = [
 
 // Gamma does not return usable tag fields, so the question text is the
 // only signal we have for topical relevance. A market must contain at
-// least one of these to qualify.
-const QUESTION_TOPIC_KEYWORDS = [
-  "russia",
-  "ukraine",
-  "china",
-  "taiwan",
-  "fed",
-  "inflation",
-  "election",
-  "regulation",
-  "trade",
-  "tariff",
-  "gdp",
-  "president",
-  "congress",
-  "senate",
-  "war",
-  "sanction",
-  "policy",
-  "rate",
-  "recession",
-  "bank",
-  "oil",
-  "energy",
-  "dollar",
-  "debt",
-  "deficit",
-  "treaty",
-  "nato",
-  "agreement",
-  "deal",
-  "vote",
-  "referendum",
-  "court",
-  "ruling",
-  "law",
-  "bill",
-  "hack",
-  "breach",
-  "launch",
-  "ipo",
-  "merger",
-  "acquisition",
-  "bankruptcy",
-];
+// least one of these to qualify. Word-boundary matched, so "launch"
+// will not match "launched" -- inflected forms are listed explicitly.
+const QUESTION_TOPIC_KEYWORDS = Array.from(
+  new Set([
+    // Geo / actors
+    "russia",
+    "ukraine",
+    "china",
+    "taiwan",
+    "trump",
+    "president",
+    "minister",
+    "governor",
+    "congress",
+    "senate",
+    "parliament",
+    "nato",
+    // Diplomacy / conflict
+    "war",
+    "ceasefire",
+    "treaty",
+    "summit",
+    "visit",
+    "agreement",
+    "deal",
+    "sanction",
+    "sanctions",
+    "nuclear",
+    "missile",
+    "troops",
+    "invasion",
+    "attack",
+    // Legal
+    "court",
+    "ruling",
+    "sentence",
+    "trial",
+    "verdict",
+    "lawsuit",
+    "indictment",
+    "arrest",
+    "appeal",
+    "convict",
+    "acquit",
+    "impeach",
+    // Politics / governance
+    "election",
+    "vote",
+    "poll",
+    "referendum",
+    "policy",
+    "regulation",
+    "law",
+    "bill",
+    "appointed",
+    "resign",
+    "fired",
+    "banned",
+    "approved",
+    "rejected",
+    "signed",
+    "passed",
+    "failed",
+    // Macro / economy
+    "fed",
+    "inflation",
+    "recession",
+    "gdp",
+    "jobs",
+    "payroll",
+    "unemployment",
+    "rate",
+    "hike",
+    "cut",
+    "bond",
+    "yield",
+    "dollar",
+    "euro",
+    "debt",
+    "deficit",
+    "default",
+    "downgrade",
+    // Trade / energy
+    "trade",
+    "tariff",
+    "oil",
+    "energy",
+    // Corporate / events
+    "ipo",
+    "merger",
+    "acquisition",
+    "bankrupt",
+    "bankruptcy",
+    "launch",
+    "launched",
+    "deployed",
+    "hack",
+    "breach",
+    "bank",
+  ])
+);
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -86,6 +142,16 @@ function toNumber(value: unknown): number {
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "string" && value.length > 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
 }
 
 function isBinaryYesNo(raw: RawGammaMarket): boolean {
@@ -159,10 +225,6 @@ export function scoreMarket(
   const yesProb = getYesProbability(raw);
   if (yesProb === null) {
     reasons.push("could not parse YES probability");
-  } else if (yesProb >= 0.45 && yesProb <= 0.55) {
-    reasons.push(
-      `YES probability ${(yesProb * 100).toFixed(1)}% is inside 45-55% no-lean band`
-    );
   }
 
   const liquidity = toNumber(raw.liquidityNum ?? raw.liquidity);
@@ -180,9 +242,7 @@ export function scoreMarket(
   } else {
     const delta = endDate.getTime() - now.getTime();
     resolvesInDays = Math.round(delta / (24 * 60 * 60 * 1000));
-    if (delta <= 0) {
-      reasons.push("endDate is in the past");
-    } else if (delta > SEVEN_DAYS_MS) {
+    if (delta > SEVEN_DAYS_MS) {
       reasons.push(`resolves in ${resolvesInDays} days, > 7`);
     }
   }
@@ -201,6 +261,9 @@ export function scoreMarket(
     question,
     description: raw.description ?? "",
     currentYesProbability: yesProb!,
+    bestBid: toOptionalNumber(raw.bestBid),
+    bestAsk: toOptionalNumber(raw.bestAsk),
+    lastTradePrice: toOptionalNumber(raw.lastTradePrice),
     volume: toNumber(raw.volumeNum ?? raw.volume),
     liquidity,
     endDate: endDate!.toISOString(),
