@@ -2,7 +2,7 @@ import "dotenv/config";
 import { fetchMarkets } from "./markets/client";
 import { filterMarkets } from "./markets/filter";
 import { Market } from "./markets/types";
-import { fetchPositions } from "./wallets/client";
+import { fetchMarketActivity } from "./wallets/client";
 
 function formatUsd(n: number): string {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
@@ -38,44 +38,37 @@ function printMarket(m: Market, idx: number): void {
   console.log(`    tags:       ${m.tags.length ? m.tags.join(", ") : "(none)"}`);
 }
 
-async function probeFirstMarketPositions(passing: Market[]): Promise<void> {
+async function probeFirstMarketActivity(passing: Market[]): Promise<void> {
   if (passing.length === 0) {
-    console.warn("\n[warn] No passing markets to probe positions for.");
+    console.warn("\n[warn] No passing markets to probe activity for.");
     return;
   }
 
   const target = passing[0];
   if (!target.conditionId) {
     console.warn(
-      `\n[warn] First passing market has no conditionId; cannot probe positions.`
+      `\n[warn] First passing market has no conditionId; cannot probe activity.`
     );
     return;
   }
 
-  const apiKey = process.env.POLYMARKET_API_KEY;
-
-  console.log(`\n=== CLOB positions probe (first passing market) ===`);
+  console.log(`\n=== Trades/activity probe (first passing market) ===`);
   console.log(`market:      ${target.question}`);
   console.log(`conditionId: ${target.conditionId}`);
-  if (!apiKey) {
-    console.log(
-      `(POLYMARKET_API_KEY not set -- only attempting public requests)`
-    );
-  }
-  console.log("\nWalking candidate endpoints...");
 
-  const result = await fetchPositions(target.conditionId, apiKey, 20);
+  const result = await fetchMarketActivity(target.conditionId, 20);
 
   for (const a of result.attempts) {
-    const auth = a.authMode === "bearer" ? "with auth" : "no auth";
     const statusStr = a.status === 0 ? "ERR" : a.status.toString();
-    console.log(`\n--- [${auth}] HTTP ${statusStr} ${a.url} ---`);
+    console.log(`\n--- HTTP ${statusStr} ${a.url} ---`);
     if (a.errorMessage) {
       console.log(`(error: ${a.errorMessage})`);
     }
     if (a.body) {
       const snippet =
-        a.body.length > 500 ? `${a.body.slice(0, 500)}...[truncated, ${a.body.length} bytes total]` : a.body;
+        a.body.length > 500
+          ? `${a.body.slice(0, 500)}...[truncated, ${a.body.length} bytes total]`
+          : a.body;
       console.log(snippet);
     } else if (!a.errorMessage) {
       console.log("(empty body)");
@@ -83,9 +76,7 @@ async function probeFirstMarketPositions(passing: Market[]): Promise<void> {
   }
 
   if (result.winningUrl) {
-    console.log(
-      `\n✓ First 2xx endpoint: ${result.winningUrl} (${result.winningAuthMode})`
-    );
+    console.log(`\n✓ First 2xx endpoint: ${result.winningUrl}`);
   } else {
     console.warn(`\n[warn] No candidate endpoint returned 2xx.`);
   }
@@ -124,7 +115,7 @@ async function main(): Promise<void> {
     }
   }
 
-  await probeFirstMarketPositions(passing);
+  await probeFirstMarketActivity(passing);
 }
 
 main().catch((err) => {

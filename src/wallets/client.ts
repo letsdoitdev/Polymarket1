@@ -1,106 +1,78 @@
 import axios from "axios";
 
 /**
- * The /positions endpoint URL is unsettled, so we probe both known
- * hosts with both auth modes and keep going regardless of which
- * succeed -- the caller wants to see the status and body of every
- * attempt, not just the first 2xx. Whichever attempt comes back with
- * a 2xx first is reported as the "winning" endpoint, but that does
- * not short-circuit the remaining probes.
+ * The /positions endpoint requires a wallet address rather than a
+ * market id, so we cannot list top holders that way. Instead we fall
+ * back to per-market trade activity: data-api's /activity feed and
+ * the CLOB's /trades feed. Both are public (no auth required), so
+ * the API key is irrelevant here.
  */
 const CANDIDATE_URLS: ReadonlyArray<string> = [
-  "https://clob.polymarket.com/positions",
-  "https://data-api.polymarket.com/positions",
+  "https://data-api.polymarket.com/activity",
+  "https://clob.polymarket.com/trades",
 ];
 
-export type AuthMode = "none" | "bearer";
-
-export interface PositionsAttempt {
+export interface ActivityAttempt {
   url: string;
-  authMode: AuthMode;
   status: number;
   ok: boolean;
   body: string;
   errorMessage?: string;
 }
 
-export interface PositionsResult {
-  attempts: PositionsAttempt[];
+export interface ActivityResult {
+  attempts: ActivityAttempt[];
   data: unknown | null;
   winningUrl: string | null;
-  winningAuthMode: AuthMode | null;
 }
 
-export async function fetchPositions(
+export async function fetchMarketActivity(
   conditionId: string,
-  apiKey: string | undefined,
   limit = 20
-): Promise<PositionsResult> {
-  const attempts: PositionsAttempt[] = [];
-  let firstOk: { data: unknown; url: string; authMode: AuthMode } | null = null;
+): Promise<ActivityResult> {
+  const attempts: ActivityAttempt[] = [];
+  let firstOk: { data: unknown; url: string } | null = null;
 
   for (const baseUrl of CANDIDATE_URLS) {
-    for (const authMode of ["none", "bearer"] as AuthMode[]) {
-      const params = { market: conditionId, limit };
-      const fullUrl = axios.getUri({ url: baseUrl, params });
+    const params = { market: conditionId, limit };
+    const fullUrl = axios.getUri({ url: baseUrl, params });
 
-      // Bearer attempt without a key would just send an unauthenticated
-      // request -- record an explicit skip rather than a misleading attempt.
-      if (authMode === "bearer" && !apiKey) {
-        attempts.push({
-          url: fullUrl,
-          authMode,
-          status: 0,
-          ok: false,
-          body: "",
-          errorMessage: "POLYMARKET_API_KEY not set; bearer attempt skipped",
-        });
-        continue;
-      }
+    try {
+      const res = await axios.get(baseUrl, {
+        params,
+        headers: { Accept: "application/json" },
+        timeout: 15_000,
+        validateStatus: () => true,
+        // Identity transform so res.data is the raw string body and we
+        // can slice it for display regardless of content-type.
+        transformResponse: [(data: unknown) => data],
+      });
+      const body =
+        typeof res.data === "string"
+          ? res.data
+          : res.data === undefined || res.data === null
+          ? ""
+          : JSON.stringify(res.data);
+      const ok = res.status >= 200 && res.status < 300;
+      attempts.push({ url: fullUrl, status: res.status, ok, body });
 
-      const headers: Record<string, string> = { Accept: "application/json" };
-      if (authMode === "bearer" && apiKey) {
-        headers.Authorization = `Bearer ${apiKey}`;
-      }
-
-      try {
-        const res = await axios.get(baseUrl, {
-          params,
-          headers,
-          timeout: 15_000,
-          validateStatus: () => true,
-          // Identity transform so res.data is the raw string body and we
-          // can slice it for display regardless of content-type.
-          transformResponse: [(data: unknown) => data],
-        });
-        const body =
-          typeof res.data === "string"
-            ? res.data
-            : res.data === undefined || res.data === null
-            ? ""
-            : JSON.stringify(res.data);
-        const ok = res.status >= 200 && res.status < 300;
-        attempts.push({ url: fullUrl, authMode, status: res.status, ok, body });
-
-        if (ok && !firstOk) {
-          let parsed: unknown = body;
-          try {
-            parsed = JSON.parse(body);
-          } catch {
-            // leave as raw string
-          }
-          firstOk = { data: parsed, url: fullUrl, authMode };
+      if (ok && !firstOk) {
+        let parsed: unknown = body;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          // leave as raw string
         }
-      } catch (err) {
-        attempts.push({
-          url: fullUrl,
-          authMode,
-          status: 0,
-          ok: false,
-          body: "",
-          errorMessage: err instanceof Error ? err.message : String(err),
-        });
+        firstOk = { data: parsed, url: fullUrl };
       }
+    } catch (err) {
+      attempts.push({
+        url: fullUrl,
+        status: 0,
+        ok: false,
+        body: "",
+        errorMessage: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -108,6 +80,5 @@ export async function fetchPositions(
     attempts,
     data: firstOk?.data ?? null,
     winningUrl: firstOk?.url ?? null,
-    winningAuthMode: firstOk?.authMode ?? null,
   };
 }
