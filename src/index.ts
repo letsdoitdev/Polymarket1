@@ -67,18 +67,25 @@ async function probeFirstMarketPositions(passing: Market[]): Promise<void> {
   const result = await fetchPositions(target.conditionId, apiKey, 20);
 
   for (const a of result.attempts) {
-    const auth = a.authMode === "bearer" ? "with auth" : "no auth  ";
+    const auth = a.authMode === "bearer" ? "with auth" : "no auth";
     const statusStr = a.status === 0 ? "ERR" : a.status.toString();
-    const trailer = a.errorMessage ? `  [error: ${a.errorMessage}]` : "";
-    console.log(`  ${auth} | HTTP ${statusStr.padStart(3)} | ${a.url}${trailer}`);
+    console.log(`\n--- [${auth}] HTTP ${statusStr} ${a.url} ---`);
+    if (a.errorMessage) {
+      console.log(`(error: ${a.errorMessage})`);
+    }
+    if (a.body) {
+      const snippet =
+        a.body.length > 500 ? `${a.body.slice(0, 500)}...[truncated, ${a.body.length} bytes total]` : a.body;
+      console.log(snippet);
+    } else if (!a.errorMessage) {
+      console.log("(empty body)");
+    }
   }
 
   if (result.winningUrl) {
     console.log(
-      `\n✓ Working endpoint (${result.winningAuthMode}): ${result.winningUrl}`
+      `\n✓ First 2xx endpoint: ${result.winningUrl} (${result.winningAuthMode})`
     );
-    console.log("\n--- raw response ---");
-    console.log(JSON.stringify(result.data, null, 2));
   } else {
     console.warn(`\n[warn] No candidate endpoint returned 2xx.`);
   }
