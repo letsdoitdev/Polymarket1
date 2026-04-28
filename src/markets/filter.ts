@@ -276,6 +276,9 @@ export function scoreMarket(
 
   const market: Market = {
     id: String(raw.id),
+    conditionId: typeof raw.conditionId === "string" && raw.conditionId.length > 0
+      ? raw.conditionId
+      : undefined,
     question,
     description: raw.description ?? "",
     currentYesProbability: yesProb!,

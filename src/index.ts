@@ -1,7 +1,9 @@
 import "dotenv/config";
+import axios from "axios";
 import { fetchMarkets } from "./markets/client";
 import { filterMarkets } from "./markets/filter";
 import { Market } from "./markets/types";
+import { fetchPositions } from "./wallets/client";
 
 function formatUsd(n: number): string {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
@@ -27,6 +29,7 @@ function printMarket(m: Market, idx: number): void {
   const payoff = `${fmtSide("YES", sp.yesPayoffPct, sp.yesPasses)} | ${fmtSide("NO", sp.noPayoffPct, sp.noPasses)}`;
   console.log(`\n[${idx + 1}] ${m.question}`);
   console.log(`    id:         ${m.id}`);
+  if (m.conditionId) console.log(`    condition:  ${m.conditionId}`);
   console.log(`    YES odds:   ${yesPct}%`);
   if (quote) console.log(`    quote:      ${quote}`);
   console.log(`    payoff:     ${payoff}`);
@@ -36,23 +39,56 @@ function printMarket(m: Market, idx: number): void {
   console.log(`    tags:       ${m.tags.length ? m.tags.join(", ") : "(none)"}`);
 }
 
+async function probeFirstMarketPositions(passing: Market[]): Promise<void> {
+  const apiKey = process.env.POLYMARKET_API_KEY;
+  if (!apiKey) {
+    console.warn(
+      "\n[warn] POLYMARKET_API_KEY not set; skipping smart money analysis."
+    );
+    return;
+  }
+
+  if (passing.length === 0) {
+    console.warn("\n[warn] No passing markets to probe positions for.");
+    return;
+  }
+
+  const target = passing[0];
+  if (!target.conditionId) {
+    console.warn(
+      `\n[warn] First passing market has no conditionId; cannot probe positions.`
+    );
+    return;
+  }
+
+  console.log(`\n=== CLOB positions probe (first passing market) ===`);
+  console.log(`market:      ${target.question}`);
+  console.log(`conditionId: ${target.conditionId}`);
+  try {
+    const data = await fetchPositions(target.conditionId, apiKey, 20);
+    console.log("\n--- raw response ---");
+    console.log(JSON.stringify(data, null, 2));
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      console.error(
+        `[error] CLOB request failed: HTTP ${err.response?.status ?? "?"} ${err.message}`
+      );
+      if (err.response?.data) {
+        console.error("body:", JSON.stringify(err.response.data, null, 2));
+      }
+    } else {
+      console.error("[error] CLOB request failed:", err);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const minLiquidityUsd = Number(process.env.MIN_LIQUIDITY_USD ?? 10_000);
   const showRejected = process.env.SHOW_REJECTED === "true";
-  const debugRaw = process.env.DEBUG_RAW !== "false";
 
   console.log("Fetching active Polymarket markets from Gamma API...");
   const raws = await fetchMarkets({ active: true, closed: false, limit: 100 });
   console.log(`Fetched ${raws.length} markets.`);
-
-  if (debugRaw && raws.length > 0) {
-    console.log("\n=== DEBUG: raw JSON of first 3 markets (pre-parse) ===");
-    for (let i = 0; i < Math.min(3, raws.length); i++) {
-      console.log(`\n--- raw[${i}] ---`);
-      console.log(JSON.stringify(raws[i], null, 2));
-    }
-    console.log("=== end DEBUG ===\n");
-  }
 
   const { passing, rejected } = filterMarkets(raws, { minLiquidityUsd });
 
@@ -78,6 +114,8 @@ async function main(): Promise<void> {
       console.log(`  ...and ${rejected.length - 25} more`);
     }
   }
+
+  await probeFirstMarketPositions(passing);
 }
 
 main().catch((err) => {

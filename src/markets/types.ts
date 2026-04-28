@@ -8,6 +8,7 @@ export interface WalletPosition {
 
 export interface Market {
   id: string;
+  conditionId?: string;
   question: string;
   description: string;
   currentYesProbability: number;
@@ -25,6 +26,7 @@ export interface Market {
 
 export interface RawGammaMarket {
   id: string;
+  conditionId?: string;
   question?: string;
   description?: string;
   outcomes?: string | string[];
