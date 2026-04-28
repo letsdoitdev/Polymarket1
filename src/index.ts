@@ -1,5 +1,4 @@
 import "dotenv/config";
-import axios from "axios";
 import { fetchMarkets } from "./markets/client";
 import { filterMarkets } from "./markets/filter";
 import { Market } from "./markets/types";
@@ -40,14 +39,6 @@ function printMarket(m: Market, idx: number): void {
 }
 
 async function probeFirstMarketPositions(passing: Market[]): Promise<void> {
-  const apiKey = process.env.POLYMARKET_API_KEY;
-  if (!apiKey) {
-    console.warn(
-      "\n[warn] POLYMARKET_API_KEY not set; skipping smart money analysis."
-    );
-    return;
-  }
-
   if (passing.length === 0) {
     console.warn("\n[warn] No passing markets to probe positions for.");
     return;
@@ -61,24 +52,35 @@ async function probeFirstMarketPositions(passing: Market[]): Promise<void> {
     return;
   }
 
+  const apiKey = process.env.POLYMARKET_API_KEY;
+
   console.log(`\n=== CLOB positions probe (first passing market) ===`);
   console.log(`market:      ${target.question}`);
   console.log(`conditionId: ${target.conditionId}`);
-  try {
-    const data = await fetchPositions(target.conditionId, apiKey, 20);
+  if (!apiKey) {
+    console.log(
+      `(POLYMARKET_API_KEY not set -- only attempting public requests)`
+    );
+  }
+  console.log("\nWalking candidate endpoints...");
+
+  const result = await fetchPositions(target.conditionId, apiKey, 20);
+
+  for (const a of result.attempts) {
+    const auth = a.authMode === "bearer" ? "with auth" : "no auth  ";
+    const statusStr = a.status === 0 ? "ERR" : a.status.toString();
+    const trailer = a.errorMessage ? `  [error: ${a.errorMessage}]` : "";
+    console.log(`  ${auth} | HTTP ${statusStr.padStart(3)} | ${a.url}${trailer}`);
+  }
+
+  if (result.winningUrl) {
+    console.log(
+      `\n✓ Working endpoint (${result.winningAuthMode}): ${result.winningUrl}`
+    );
     console.log("\n--- raw response ---");
-    console.log(JSON.stringify(data, null, 2));
-  } catch (err) {
-    if (axios.isAxiosError(err)) {
-      console.error(
-        `[error] CLOB request failed: HTTP ${err.response?.status ?? "?"} ${err.message}`
-      );
-      if (err.response?.data) {
-        console.error("body:", JSON.stringify(err.response.data, null, 2));
-      }
-    } else {
-      console.error("[error] CLOB request failed:", err);
-    }
+    console.log(JSON.stringify(result.data, null, 2));
+  } else {
+    console.warn(`\n[warn] No candidate endpoint returned 2xx.`);
   }
 }
 
