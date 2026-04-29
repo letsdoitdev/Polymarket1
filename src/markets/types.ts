@@ -1,7 +1,9 @@
 import { SidePayoffs } from "../betting/payoff";
+import { SmartMoneySignal } from "../wallets/types";
 
 export interface WalletPosition {
   address: string;
+  pseudonym?: string;
   size: number;
   side: "YES" | "NO";
 }
@@ -22,6 +24,7 @@ export interface Market {
   resolvesInDays: number;
   tags: string[];
   topPositions: WalletPosition[];
+  smartMoneySignal?: SmartMoneySignal;
 }
 
 export interface RawGammaMarket {

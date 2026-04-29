@@ -1,84 +1,47 @@
 import axios from "axios";
+import { RawHoldersResponse, RawTrade } from "./types";
+
+const DATA_API_BASE = "https://data-api.polymarket.com";
 
 /**
- * The /positions endpoint requires a wallet address rather than a
- * market id, so we cannot list top holders that way. Instead we fall
- * back to per-market trade activity: data-api's /activity feed and
- * the CLOB's /trades feed. Both are public (no auth required), so
- * the API key is irrelevant here.
+ * Top holders per outcome token for a given market. The response is an
+ * array with one entry per outcome token (YES + NO for binary markets);
+ * each entry contains a `holders` array sorted by size descending.
+ *
+ * Endpoint is public -- no auth header.
  */
-const CANDIDATE_URLS: ReadonlyArray<string> = [
-  "https://data-api.polymarket.com/activity",
-  "https://clob.polymarket.com/trades",
-];
-
-export interface ActivityAttempt {
-  url: string;
-  status: number;
-  ok: boolean;
-  body: string;
-  errorMessage?: string;
-}
-
-export interface ActivityResult {
-  attempts: ActivityAttempt[];
-  data: unknown | null;
-  winningUrl: string | null;
-}
-
-export async function fetchMarketActivity(
+export async function fetchHolders(
   conditionId: string,
   limit = 20
-): Promise<ActivityResult> {
-  const attempts: ActivityAttempt[] = [];
-  let firstOk: { data: unknown; url: string } | null = null;
-
-  for (const baseUrl of CANDIDATE_URLS) {
-    const params = { market: conditionId, limit };
-    const fullUrl = axios.getUri({ url: baseUrl, params });
-
-    try {
-      const res = await axios.get(baseUrl, {
-        params,
-        headers: { Accept: "application/json" },
-        timeout: 15_000,
-        validateStatus: () => true,
-        // Identity transform so res.data is the raw string body and we
-        // can slice it for display regardless of content-type.
-        transformResponse: [(data: unknown) => data],
-      });
-      const body =
-        typeof res.data === "string"
-          ? res.data
-          : res.data === undefined || res.data === null
-          ? ""
-          : JSON.stringify(res.data);
-      const ok = res.status >= 200 && res.status < 300;
-      attempts.push({ url: fullUrl, status: res.status, ok, body });
-
-      if (ok && !firstOk) {
-        let parsed: unknown = body;
-        try {
-          parsed = JSON.parse(body);
-        } catch {
-          // leave as raw string
-        }
-        firstOk = { data: parsed, url: fullUrl };
-      }
-    } catch (err) {
-      attempts.push({
-        url: fullUrl,
-        status: 0,
-        ok: false,
-        body: "",
-        errorMessage: err instanceof Error ? err.message : String(err),
-      });
+): Promise<RawHoldersResponse[]> {
+  const res = await axios.get<RawHoldersResponse[]>(
+    `${DATA_API_BASE}/holders`,
+    {
+      params: { market: conditionId, limit },
+      timeout: 15_000,
+      headers: { Accept: "application/json" },
     }
+  );
+  if (!Array.isArray(res.data)) {
+    throw new Error("Unexpected /holders response shape (expected array)");
   }
+  return res.data;
+}
 
-  return {
-    attempts,
-    data: firstOk?.data ?? null,
-    winningUrl: firstOk?.url ?? null,
-  };
+/**
+ * Recent trades for a given market, newest first. Public endpoint.
+ */
+export async function fetchTrades(
+  conditionId: string,
+  limit = 20
+): Promise<RawTrade[]> {
+  const res = await axios.get<RawTrade[]>(`${DATA_API_BASE}/trades`, {
+    params: { market: conditionId, limit },
+    timeout: 15_000,
+    headers: { Accept: "application/json" },
+  });
+  if (!Array.isArray(res.data)) {
+    throw new Error("Unexpected /trades response shape (expected array)");
+  }
+  return res.data;
 }

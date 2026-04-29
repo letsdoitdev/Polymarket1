@@ -10,7 +10,8 @@
     "dev": "ts-node src/index.ts",
     "typecheck": "tsc --noEmit",
     "probe:clob": "ts-node scripts/probe-clob-auth.ts",
-    "probe:market-data": "ts-node scripts/probe-market-data.ts"
+    "probe:market-data": "ts-node scripts/probe-market-data.ts",
+    "smoke": "ts-node scripts/smoke.ts && ts-node scripts/smoke-signal.ts"
   },
   "engines": {
     "node": ">=18"

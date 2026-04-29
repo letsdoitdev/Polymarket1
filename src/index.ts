@@ -1,8 +1,9 @@
 import "dotenv/config";
 import { fetchMarkets } from "./markets/client";
 import { filterMarkets } from "./markets/filter";
-import { Market } from "./markets/types";
-import { fetchMarketActivity } from "./wallets/client";
+import { Market, WalletPosition } from "./markets/types";
+import { fetchHolders, fetchTrades } from "./wallets/client";
+import { buildSmartMoneySignal } from "./wallets/signal";
 
 function formatUsd(n: number): string {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
@@ -38,47 +39,49 @@ function printMarket(m: Market, idx: number): void {
   console.log(`    tags:       ${m.tags.length ? m.tags.join(", ") : "(none)"}`);
 }
 
-async function probeFirstMarketActivity(passing: Market[]): Promise<void> {
-  if (passing.length === 0) {
-    console.warn("\n[warn] No passing markets to probe activity for.");
-    return;
-  }
+async function attachSmartMoney(passing: Market[]): Promise<void> {
+  if (passing.length === 0) return;
 
-  const target = passing[0];
-  if (!target.conditionId) {
-    console.warn(
-      `\n[warn] First passing market has no conditionId; cannot probe activity.`
-    );
-    return;
-  }
+  console.log(`\n=== Fetching smart money for ${passing.length} markets ===`);
+  await Promise.all(
+    passing.map(async (m) => {
+      if (!m.conditionId) {
+        console.warn(`[warn] ${m.id}: no conditionId; skipping smart money`);
+        return;
+      }
+      try {
+        const [holdersRaw, tradesRaw] = await Promise.all([
+          fetchHolders(m.conditionId, 20),
+          fetchTrades(m.conditionId, 20),
+        ]);
+        const signal = buildSmartMoneySignal(holdersRaw, tradesRaw);
+        m.smartMoneySignal = signal;
+        const positions: WalletPosition[] = [
+          ...signal.topYesHolders,
+          ...signal.topNoHolders,
+        ].map((h) => ({
+          address: h.address,
+          pseudonym: h.pseudonym || undefined,
+          size: h.size,
+          side: h.side,
+        }));
+        m.topPositions = positions;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[warn] smart money fetch failed for ${m.id}: ${msg}`);
+      }
+    })
+  );
+}
 
-  console.log(`\n=== Trades/activity probe (first passing market) ===`);
-  console.log(`market:      ${target.question}`);
-  console.log(`conditionId: ${target.conditionId}`);
+function printSmartMoney(passing: Market[]): void {
+  const withSignal = passing.filter((m) => m.smartMoneySignal);
+  if (withSignal.length === 0) return;
 
-  const result = await fetchMarketActivity(target.conditionId, 20);
-
-  for (const a of result.attempts) {
-    const statusStr = a.status === 0 ? "ERR" : a.status.toString();
-    console.log(`\n--- HTTP ${statusStr} ${a.url} ---`);
-    if (a.errorMessage) {
-      console.log(`(error: ${a.errorMessage})`);
-    }
-    if (a.body) {
-      const snippet =
-        a.body.length > 500
-          ? `${a.body.slice(0, 500)}...[truncated, ${a.body.length} bytes total]`
-          : a.body;
-      console.log(snippet);
-    } else if (!a.errorMessage) {
-      console.log("(empty body)");
-    }
-  }
-
-  if (result.winningUrl) {
-    console.log(`\n✓ First 2xx endpoint: ${result.winningUrl}`);
-  } else {
-    console.warn(`\n[warn] No candidate endpoint returned 2xx.`);
+  console.log(`\n=== Smart money signals ===`);
+  for (const m of withSignal) {
+    console.log(`\n--- ${m.question} ---`);
+    console.log(m.smartMoneySignal!.asText);
   }
 }
 
@@ -99,9 +102,8 @@ async function main(): Promise<void> {
   if (passing.length === 0) {
     console.log("No qualifying markets right now.");
   } else {
-    passing
-      .sort((a, b) => a.resolvesInDays - b.resolvesInDays)
-      .forEach((m, i) => printMarket(m, i));
+    passing.sort((a, b) => a.resolvesInDays - b.resolvesInDays);
+    passing.forEach((m, i) => printMarket(m, i));
   }
 
   if (showRejected) {
@@ -115,7 +117,8 @@ async function main(): Promise<void> {
     }
   }
 
-  await probeFirstMarketActivity(passing);
+  await attachSmartMoney(passing);
+  printSmartMoney(passing);
 }
 
 main().catch((err) => {
