@@ -1,7 +1,7 @@
 import "dotenv/config";
 import Anthropic from "@anthropic-ai/sdk";
-import { THE_QUANT } from "./agents/prompts";
-import { callAgentWithUsage } from "./agents/caller";
+import { ALL_AGENTS } from "./agents/prompts";
+import { AgentMessage, callAgentWithUsage } from "./agents/caller";
 import { fetchMarkets } from "./markets/client";
 import { filterMarkets } from "./markets/filter";
 import { Market, WalletPosition } from "./markets/types";
@@ -88,11 +88,11 @@ function printSmartMoney(passing: Market[]): void {
   }
 }
 
-async function runQuantOnFirstMarket(passing: Market[]): Promise<void> {
+async function runRound1OnFirstMarket(passing: Market[]): Promise<void> {
   if (passing.length === 0) return;
   if (!process.env.ANTHROPIC_API_KEY) {
     console.warn(
-      "\n[warn] ANTHROPIC_API_KEY not set; skipping agent test call."
+      "\n[warn] ANTHROPIC_API_KEY not set; skipping agent calls."
     );
     return;
   }
@@ -101,33 +101,37 @@ async function runQuantOnFirstMarket(passing: Market[]): Promise<void> {
   const smartMoneyText =
     target.smartMoneySignal?.asText ?? "(smart money signal unavailable)";
 
-  console.log(`\n=== ${THE_QUANT.name} (test call on first passing market) ===`);
+  console.log(`\n=== Round 1 (${ALL_AGENTS.length} agent${ALL_AGENTS.length === 1 ? "" : "s"}) on first passing market ===`);
   console.log(`Market: ${target.question}`);
 
-  try {
-    const { text, usage } = await callAgentWithUsage(
-      THE_QUANT.name,
-      THE_QUANT.systemPrompt,
-      target,
-      smartMoneyText,
-      [],
-      false
-    );
-    console.log(`\n[${THE_QUANT.name}]\n${text}\n`);
-    console.log(
-      `tokens: in=${usage.inputTokens}, out=${usage.outputTokens}, ` +
-        `cache_write=${usage.cacheCreationInputTokens}, cache_read=${usage.cacheReadInputTokens}`
-    );
-  } catch (err) {
-    if (err instanceof Anthropic.APIError) {
-      console.error(
-        `[error] Anthropic API ${err.status}: ${err.message}`
+  const priorMessages: AgentMessage[] = [];
+  for (const agent of ALL_AGENTS) {
+    try {
+      const { text, usage } = await callAgentWithUsage(
+        agent.name,
+        agent.systemPrompt,
+        target,
+        smartMoneyText,
+        priorMessages,
+        false
       );
-    } else {
-      console.error(
-        "[error] Agent call failed:",
-        err instanceof Error ? err.message : err
+      console.log(`\n[${agent.name}]\n${text}`);
+      console.log(
+        `(tokens: in=${usage.inputTokens}, out=${usage.outputTokens}, ` +
+          `cache_write=${usage.cacheCreationInputTokens}, cache_read=${usage.cacheReadInputTokens})`
       );
+      priorMessages.push({ agent: agent.name, content: text });
+    } catch (err) {
+      if (err instanceof Anthropic.APIError) {
+        console.error(
+          `[error] ${agent.name}: Anthropic API ${err.status}: ${err.message}`
+        );
+      } else {
+        console.error(
+          `[error] ${agent.name}:`,
+          err instanceof Error ? err.message : err
+        );
+      }
     }
   }
 }
@@ -166,7 +170,7 @@ async function main(): Promise<void> {
 
   await attachSmartMoney(passing);
   printSmartMoney(passing);
-  await runQuantOnFirstMarket(passing);
+  await runRound1OnFirstMarket(passing);
 }
 
 main().catch((err) => {

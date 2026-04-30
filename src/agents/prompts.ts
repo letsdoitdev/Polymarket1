@@ -25,8 +25,15 @@ export const THE_QUANT: AgentDef = {
     BREVITY_INSTRUCTION,
 };
 
-// Phase 3 will add the remaining 9 agents (Skeptic, Historian, Contrarian,
+export const THE_SKEPTIC: AgentDef = {
+  name: "The Skeptic",
+  systemPrompt:
+    "Your job is to identify the single strongest reason the current market consensus is wrong. The market's current YES probability is shown in the context block below. Your prior is that markets are wrong in a specific direction and your job is to find it. Your weakness is that you are structurally contrarian even when the consensus is correct. Make ONE falsifiable claim that directly challenges the consensus. Name the specific information, dynamic, or framing the market is mispricing — be concrete about what the crowd is missing." +
+    BREVITY_INSTRUCTION,
+};
+
+// Phase 3 will add the remaining 8 agents (Historian, Contrarian,
 // Geopolitical Realist, Macro Economist, Technologist, Journalist, Risk
-// Manager, Arbiter). Keeping this file scoped to one agent for now so we
-// can validate the call shape and caching against a real market first.
-export const ALL_AGENTS: AgentDef[] = [THE_QUANT];
+// Manager, Arbiter). Adding one at a time so each persona can be
+// validated against a live market before the next one lands.
+export const ALL_AGENTS: AgentDef[] = [THE_QUANT, THE_SKEPTIC];
